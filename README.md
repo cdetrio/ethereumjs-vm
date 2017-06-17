@@ -103,8 +103,7 @@ Runs EVM code
   - `gas` - the amount of gas left as a `bignum`
   - `gasUsed` - the amount of gas as a `bignum` the code used to run. 
   - `gasRefund` - a `Bignum` containing the amount of gas to refund from deleting storage values
-  - `suicides` - an `Array` of accounts that have suicided.
-  - `suicideTo` - the account that the suicide refund should go to.
+  - `suicides` - an `Object` with keys for accounts that have suicided and values for balance transfer recipient accounts.
   - `logs` - an `Array` of logs that the contract emitted.
   - `exception` - `0` if the contract encountered an exception, `1` otherwise.
   - `exceptionError` - a `String` describing the exception if there was one.
@@ -165,11 +164,11 @@ Emits the result of the transaction.
 # TESTING
 `npm test`  
 if you want to just run the Blockchain tests run
-`./bin/tester -b`
+`./test/tester -b`
 if you want to just run the VM tests run
-`./bin/tester -v`
+`./test/tester -v`
 if you want to just run the State tests run
-`./bin/tester -s`
+`./test/tester -s`
 
 # Internal Structure
 The VM processes state changes at many levels.
