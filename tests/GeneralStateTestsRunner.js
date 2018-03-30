@@ -2,6 +2,7 @@ const async = require('async')
 const testUtil = require('./util')
 const Trie = require('merkle-patricia-tree/secure')
 const ethUtil = require('ethereumjs-util')
+const StateManager = require('../lib/stateManager.js')
 const BN = ethUtil.BN
 
 function parseTestCases (forkConfig, testData, data, gasLimit, value) {
@@ -39,7 +40,8 @@ function parseTestCases (forkConfig, testData, data, gasLimit, value) {
 }
 
 function runTestCase (options, testData, t, cb) {
-  const state = new Trie()
+  //const state = new Trie()
+  const stateManager = new StateManager({})
   let block, vm
 
   async.series([
@@ -51,11 +53,15 @@ function runTestCase (options, testData, t, cb) {
         VM = require('../lib/index.js')
       }
       vm = new VM({
-        state: state
+        //state: state
+        'stateManager' : stateManager
       })
-      testUtil.setupPreConditions(state, testData, done)
+      //testUtil.setupPreConditions(state, testData, done)
+      console.log('state test runner calling testUtil.setupPreConditions..')
+      testUtil.setupPreConditions(stateManager, testData, done)
     },
     function (done) {
+      console.log('preconditions setup.  now running tx..')
       var tx = testUtil.makeTx(testData.transaction)
       block = testUtil.makeBlockFromEnv(testData.env)
       tx._homestead = true
@@ -91,6 +97,7 @@ function runTestCase (options, testData, t, cb) {
             t.comment(JSON.stringify(stateRoot))
           })
         }
+        console.log('state test runner calling vm.runTx...')
         vm.runTx({
           tx: tx,
           block: block
@@ -103,12 +110,15 @@ function runTestCase (options, testData, t, cb) {
       }
     },
     function (done) {
+      console.log('runTx is done. now doing verifyPostConditions...')
       if (testData.postStateRoot.substr(0, 2) === '0x') {
         testData.postStateRoot = testData.postStateRoot.substr(2)
       }
-      t.equal(state.root.toString('hex'), testData.postStateRoot, 'the state roots should match')
+      //t.equal(state.root.toString('hex'), testData.postStateRoot, 'the state roots should match')
+      t.equal(stateManager.trie.root.toString('hex'), testData.postStateRoot, 'the state roots should match')
 
-      if (state.root.toString('hex') !== testData.postStateRoot.toString('hex')) {
+      //if (state.root.toString('hex') !== testData.postStateRoot.toString('hex')) {
+      if (stateManager.trie.root.toString('hex') !== testData.postStateRoot.toString('hex')) {
         // since General State Tests, postState keys are no longer included in
         // the state test format. only postStateRoot, so can't debug expected post conditions
         // testUtil.verifyPostConditions(state, testData.post, t, done)

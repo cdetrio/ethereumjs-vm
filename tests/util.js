@@ -6,6 +6,11 @@ const Account = require('ethereumjs-account')
 const Transaction = require('ethereumjs-tx')
 const Block = require('ethereumjs-block')
 
+const log = require('loglevel').getLogger('test-util')
+log.setLevel('silent')
+
+const EMPTY_TRIE_ROOT = Buffer.from(utils.SHA3_RLP).toString('hex')
+
 exports.dumpState = function (state, cb) {
   function readAccounts (state) {
     return new Promise((resolve, reject) => {
@@ -52,14 +57,14 @@ exports.dumpState = function (state, cb) {
         cb(err, null)
       }
       for (let i = 0; i < results.length; i++) {
-        console.log('SHA3\'d address: ' + results[i].address.toString('hex'))
-        console.log('\tstate root: ' + results[i].stateRoot.toString('hex'))
-        console.log('\tstorage: ')
+        log.trace('SHA3\'d address: ' + results[i].address.toString('hex'))
+        log.trace('\tstate root: ' + results[i].stateRoot.toString('hex'))
+        log.trace('\tstorage: ')
         for (let storageKey in results[i].storage) {
-          console.log('\t\t' + storageKey + ': ' + results[i].storage[storageKey])
+          log.trace('\t\t' + storageKey + ': ' + results[i].storage[storageKey])
         }
-        console.log('\tnonce: ' + (new BN(results[i].nonce)).toString())
-        console.log('\tbalance: ' + (new BN(results[i].balance)).toString())
+        log.trace('\tnonce: ' + (new BN(results[i].nonce)).toString())
+        log.trace('\tbalance: ' + (new BN(results[i].balance)).toString())
       }
       return cb()
     })
@@ -113,54 +118,133 @@ exports.makeTx = function (txData) {
   return tx
 }
 
-exports.verifyPostConditions = function (state, testData, t, cb) {
+//exports.verifyPostConditions = function (state, testData, t, cb) {
+exports.verifyPostConditions = function (stateManager, testData, t, cb) {
+  log.trace('util.js verifyPostConditions')
   var hashedAccounts = {}
   var keyMap = {}
 
+  log.trace('util.js verifyPostConditions:', testData)
+
+  /*
   for (var key in testData) {
     var hash = utils.sha3(Buffer.from(utils.stripHexPrefix(key), 'hex')).toString('hex')
     hashedAccounts[hash] = testData[key]
     keyMap[hash] = key
   }
+  */
 
-  var q = async.queue(function (task, cb2) {
-    exports.verifyAccountPostConditions(state, task.address, task.account, task.testData, t, cb2)
-  }, 1)
+  const testDataKeys = Object.keys(testData)
+  let i = 0
+  for (let key in testData) {
+    log.trace('verifying expected account:', key)
+    const addressKey = key.substr(2)
 
-  var stream = state.createReadStream()
+    stateManager.getAccountFromDb(addressKey, function(err, result) {
+    try {
 
-  stream.on('data', function (data) {
-    var acnt = new Account(rlp.decode(data.value))
-    var key = data.key.toString('hex')
-    var testData = hashedAccounts[key]
-    var address = keyMap[key]
-    delete keyMap[key]
+      i = i + 1
 
-    if (testData) {
-      q.push({
-        address: address,
-        account: acnt,
-        testData: testData
-      })
-    } else {
-      t.fail('invalid account in the trie: ' + key)
-    }
-  })
+      log.trace('util.js verifyPostConditions got getAccountFromDb for address ' + addressKey + ' result:', result)
+      const actualAccount = result
+      const actualAccountBalance = (new BN(actualAccount.balance.toString('hex'), 16)).toString(16)
+      log.trace('actualAccount balance:', actualAccountBalance)
 
-  stream.on('end', function () {
-    function onEnd () {
-      for (hash in keyMap) {
-        t.fail('Missing account!: ' + keyMap[hash])
+      const actualAccountNonce = (new BN(actualAccount.nonce.toString('hex'), 16)).toNumber()
+      log.trace('actualAccount nonce:', actualAccountNonce)
+
+      const expectedAccountBalance = (new BN(testData[key]['balance'].substr(2), 16)).toString(16)
+      log.trace('expectedAccount balance:', expectedAccountBalance)
+
+      const expectedAccountNonce = (new BN(testData[key]['nonce'].substr(2), 16)).toNumber()
+      log.trace('expectedAccount nonce:', expectedAccountNonce)
+
+      log.trace('expectedAccountCode:', testData[key]['code'])
+      const expectedAccountCodeHash = utils.sha3(testData[key]['code']).toString('hex')
+      log.trace('expectedAccountCodeHash:', expectedAccountCodeHash)
+
+      const actualAccountCodeHash = actualAccount.codeHash.toString('hex')
+      log.trace('actualAccountCodeHash:', actualAccountCodeHash)
+
+      t.equal(actualAccountNonce, expectedAccountNonce, 'account nonce')
+
+      t.equal(actualAccountBalance, expectedAccountBalance, 'account balance')
+
+      t.equal(actualAccountCodeHash, expectedAccountCodeHash, 'account code hash')
+
+      const actualAccountStorageRoot = actualAccount.stateRoot.toString('hex')
+      log.trace('actualAccountStorageRoot:', actualAccountStorageRoot)
+      
+      const expectedStorage = testData[key]['storage']
+      const expectedStorageKeys = Object.keys(expectedStorage)
+      
+      if (expectedStorageKeys.length === 0 && actualAccountStorageRoot !== EMPTY_TRIE_ROOT) {
+        t.fail('account storage root should not be empty!')
       }
+      if (expectedStorageKeys.length > 0) {
+        //stateManager.db.getAccountStorage(addressKey)
+      }
+      
+      if (i >= testDataKeys.length) {
+        console.log('util.js verifyPostConditions did all accounts...')
+        cb()
+      }
+
+    } catch (err) {
+      console.log('util.js verifyPostConditions getAccountFromDb callback caught error:', err)
       cb()
     }
 
-    if (q.length()) {
-      q.drain = onEnd
-    } else {
-      onEnd()
-    }
+    })
+
+  }
+
+  /*
+  log.trace('util.js verifyPostConditions testData:', testData)
+  log.trace('util.js verifyPostConditions calling getAllAccountStorage...')
+  stateManager.getAllAccountStorage(function(result) {
+    log.trace('util.js verifyAccountPostConditions getAllAccountStorage result:', result)
+    // TODO: compare accounts
+    const actualAccounts = Object.keys(result)
+    
+    actualAccounts.forEach(address => {
+      const hexPrefixAddress = '0x' + address
+      log.trace('actualAccounts foreach address:', address)
+      if (testData[hexPrefixAddress]) {
+        q.push({
+          address: address,
+          account: result[address],
+          testData: testData[hexPrefixAddress]
+        })
+      } else {
+        t.fail('invalid account in postState: ' + address)
+      }
+
+    })
+
+    q.push(null, cb)
+    //cb()
   })
+
+  var q = async.queue(function (task, cb2) {
+    // exports.verifyAccountPostConditions(state, task.address, task.account, task.testData, t, cb2)
+    function veryAccountCB() {
+      log.trace('verifyAccount CB for address:', task.address)
+      cb2()
+    }
+
+    if (task) {
+      log.trace('calling verifyAccountPostConditions on address:', task.address)
+      exports.verifyAccountPostConditions(stateManager, task.address, task.account, task.testData, t, veryAccountCB)
+    } else {
+      log.trace('verifyAccountPostConditions finished.')
+      cb()
+    }
+
+  }, 1)
+  */
+
+
 }
 
 /**
@@ -171,48 +255,63 @@ exports.verifyPostConditions = function (state, testData, t, cb) {
  * @param {[type]}   acctData postconditions JSON from tests repo
  * @param {Function} cb       completion callback
  */
-exports.verifyAccountPostConditions = function (state, address, account, acctData, t, cb) {
+//exports.verifyAccountPostConditions = function (stateManager, address, actualAccountStorage, expectedAccountPostState, t, cb) {
+exports.verifyAccountPostConditions = function (stateManager, address, actualAccountStorage, expectedAccountPostState, t, cb) {
+  log.trace('util.js verifyAccountPostConditions.')
   t.comment('Account: ' + address)
+  /*
   t.equal(format(account.balance, true).toString('hex'), format(acctData.balance, true).toString('hex'), 'correct balance')
   t.equal(format(account.nonce, true).toString('hex'), format(acctData.nonce, true).toString('hex'), 'correct nonce')
+  */
+
+  // TODO: verify account balance, nonce, code
+  // the balance, nonce, code is in acctData
 
   // validate storage
-  var origRoot = state.root
-  var storageKeys = Object.keys(acctData.storage)
+  //var origRoot = state.root
 
+  const expectedStorage = expectedAccountPostState.storage
+  const expectedStorageKeys = Object.keys(expectedStorage)
+  log.trace('expectedStorageKeys:', expectedStorageKeys)
+  
+  log.trace('actualAccountStorage:', actualAccountStorage)
+
+  const actualStorageKeys = Object.keys(actualAccountStorage)
+  log.trace('actualStorageKeys:', actualStorageKeys)
+
+
+
+  /*
   var hashedStorage = {}
   for (var key in acctData.storage) {
     hashedStorage[utils.sha3(utils.setLength(Buffer.from(key.slice(2), 'hex'), 32)).toString('hex')] = acctData.storage[key]
   }
+  */
 
-  if (storageKeys.length > 0) {
-    state.root = account.stateRoot
-    var rs = state.createReadStream()
-    rs.on('data', function (data) {
-      var key = data.key.toString('hex')
-      var val = '0x' + rlp.decode(data.value).toString('hex')
+  if (expectedStorageKeys.length > 0) {
+    //state.root = account.stateRoot
+    
+    if (actualStorageKeys.length !== expectedStorageKeys.length) {
+      t.fail('account has wrong number of storage keys!')
+    }
 
-      if (key === '0x') {
-        key = '0x00'
-        acctData.storage['0x00'] = acctData.storage['0x00'] ? acctData.storage['0x00'] : acctData.storage['0x']
-        delete acctData.storage['0x']
-      }
-
-      t.equal(val, hashedStorage[key], 'correct storage value')
-      delete hashedStorage[key]
+    expectedStorageKeys.forEach(key => {
+      log.trace('storageKeys forEach key:', key)
+      const paddedKey = utils.setLength(Buffer.from(new BN(key.slice(2), 16).toArray()), 32).toString('hex')
+      log.trace('paddedKey:', paddedKey)
+      const actualValue = actualAccountStorage[paddedKey]
+      log.trace('actualValue:', actualValue)
+      const expectedValue = expectedStorage[key].substr(2)
+      log.trace('expectedValue:', expectedValue)
+      t.equal(actualValue, expectedValue, 'storage key '+key+' correct')
     })
 
-    rs.on('end', function () {
-      for (var key in hashedStorage) {
-        if (hashedStorage[key] !== '0x00') {
-          t.fail('key: ' + key + ' not found in storage')
-        }
-      }
+    cb()
 
-      state.root = origRoot
-      cb()
-    })
   } else {
+    if (actualStorageKeys.length !== 0) {
+      t.fail('account should have no storage!')
+    }
     cb()
   }
 }
@@ -350,44 +449,101 @@ exports.makeRunCodeData = function (exec, account, block) {
  * @param {[type]}   testData - JSON from tests repo
  * @param {Function} done     - callback when function is completed
  */
-exports.setupPreConditions = function (state, testData, done) {
+//exports.setupPreConditions = function (state, testData, done) {
+exports.setupPreConditions = function (stateManager, testData, done) {
+  log.trace('util.js setupPreConditions...',)
+
   var keysOfPre = Object.keys(testData.pre)
+  log.trace('keysOfPre:', keysOfPre)
 
   async.eachSeries(keysOfPre, function (key, callback) {
     var acctData = testData.pre[key]
+    const accountAddress = utils.stripHexPrefix(key)
+    log.trace('setupPreConditions for account:', key)
     var account = new Account()
 
     account.nonce = format(acctData.nonce)
     account.balance = format(acctData.balance)
 
     var codeBuf = Buffer.from(acctData.code.slice(2), 'hex')
-    var storageTrie = state.copy()
-    storageTrie.root = null
+    account.codeHash = utils.sha3(codeBuf)
+
+    //var storageTrie = stateManager.trie.copy()
+    //storageTrie.root = null
+    let storageTrieRoot = null
 
     async.series([
 
       function (cb2) {
         var keys = Object.keys(acctData.storage)
+        log.trace('storage keys:', keys)
+        if (keys.length > 0) {
+          storageTrieRoot = true
+        }
 
         async.forEachSeries(keys, function (key, cb3) {
+          log.trace('for each storage key:', key)
           var val = acctData.storage[key]
-          val = rlp.encode(Buffer.from(val.slice(2), 'hex'))
+          log.trace('val:', val)
+          // rlp encoding of the value is now handled by setAccountStorage
+          //val = rlp.encode(Buffer.from(val.slice(2), 'hex'))
+          val = Buffer.from(val.slice(2), 'hex')
           key = utils.setLength(Buffer.from(key.slice(2), 'hex'), 32)
 
-          storageTrie.put(key, val, cb3)
+          //stateManager.db.setAccountStorage
+          stateManager.setAccountStorage(accountAddress, key, val, cb3)
+          //storageTrie.put(key, val, cb3)
         }, cb2)
       },
-      function (cb2) {
-        account.setCode(state, codeBuf, cb2)
+      function (cb) {
+        if (storageTrieRoot) {
+          // dummy root hash to distinguish between empty and non-empty
+          storageTrieRoot = 'dead2f043ee3c3a67dbc99006258cee3429673b883c242f5ebfa8a6b38b62f6b'
+        } else {
+          storageTrieRoot = EMPTY_TRIE_ROOT
+        }
+        cb()
+        /*
+        stateManager.getContractStorageRoot(accountAddress, function(err, result) {
+          if (err) {
+            log.trace('util.js setupPreConditions getContractStorageRoot callback err:', err)
+          }
+          log.trace('util.js setupPreConditions getContractStorageRoot callback result:', result)
+          storageTrieRoot = result
+          cb()
+        })
+        */
+      },
+      function (cb) {
+        // right here the stateroot gets set to empty??
+        //account.setCode(stateManager.trie, codeBuf, cb)
+        if (codeBuf.length > 0) {
+          stateManager.setAccountCode(accountAddress, codeBuf.toString('hex'), cb)
+        } else {
+          cb()
+        }
       },
       function (cb2) {
-        account.stateRoot = storageTrie.root
+
+        account.stateRoot = Buffer.from(storageTrieRoot, 'hex')
 
         if (testData.exec && key === testData.exec.address) {
           testData.root = storageTrie.root
         }
-        state.put(Buffer.from(utils.stripHexPrefix(key), 'hex'), account.serialize(), function () {
+
+        //log.trace('calling stateManager.cache.put on key:', key)
+        //state.put(Buffer.from(utils.stripHexPrefix(key), 'hex'), account.serialize(), function () {
+        //log.trace('calling put with account:', account)
+        //stateManager._putAccount(Buffer.from(utils.stripHexPrefix(key), 'hex'), account, function () {
+        //stateManager._putAccount(utils.stripHexPrefix(key), account, function () {
+        stateManager.setAccount(utils.stripHexPrefix(key), account, function () {
           cb2()
+        })
+      },
+      function (cb3) {
+        stateManager.cache.flush(function() {
+          log.trace('util.js cache flushed!')
+          cb3()
         })
       }
     ], callback)

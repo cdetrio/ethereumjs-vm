@@ -232,6 +232,7 @@ function runTests (name, runnerArgs, cb) {
             let inRunSkipped = runSkipped.includes(fileName)
             if (runSkipped.length === 0 || inRunSkipped) {
               t.comment(`file: ${fileName} test: ${testName}`)
+              console.log('tester.js calling ' + `${name}Runner.js` + '...')
               runner(runnerArgs, test, t, resolve)
             } else {
               resolve()
@@ -239,6 +240,7 @@ function runTests (name, runnerArgs, cb) {
           }
         }).catch(err => console.log(err))
       }, testGetterArgs).then(() => {
+        console.log('tester.js promise resolved. calling t.end()...')
         t.end()
       })
     })
