@@ -55,6 +55,7 @@ module.exports = function runBlockchainTest (options, testData, t, cb) {
     function (done) {
       //testUtil.setupPreConditions(state, testData, function () {
       testUtil.setupPreConditions(stateManager, testData, function () {
+        console.log('---------- BlockchainTestsRunner.js setupPreConditions done ----------')
         done()
       })
     },
@@ -64,9 +65,11 @@ module.exports = function runBlockchainTest (options, testData, t, cb) {
 
       //t.equal(state.root.toString('hex'), genesisBlock.header.stateRoot.toString('hex'), 'correct pre stateRoot')
 
+      /*
       testUtil.dumpState(stateManager.trie, function(err) {
         console.log('BlockchainTestsRunner.js after setupPreConditions dumpState err:', err)
       })
+      */
 
       //t.equal(stateManager.trie.root.toString('hex'), genesisBlock.header.stateRoot.toString('hex'), 'correct pre stateRoot')
 
