@@ -114,7 +114,11 @@ if (argv.r) {
 } else if (argv.v) {
   runTests('VMTests', argv)
 } else if (argv.b) {
-  runTests('BlockchainTests', argv)
+
+  //setTimeout(function() {
+    runTests('BlockchainTests', argv)
+  //}, 16000)
+
 } else if (argv.a) {
   runAll()
 }
