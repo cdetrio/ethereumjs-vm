@@ -39,6 +39,5 @@ vm.runBlock({
   const mGasPerSecond = (gasUsed / 1000000) / (runBlock_time / 1000)
   // const mGasPerSecond = gasUsed / runBlock_time
   console.log("Call to runBlock mgas/s:", mGasPerSecond.toFixed(2))
+  stateManager.db.quit()
 })
-
-stateManager.db.quit()
