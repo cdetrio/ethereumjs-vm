@@ -33,7 +33,7 @@ vm.runBlock({
   const t_end_runBlock = performance.now()
   const runBlock_time = t_end_runBlock - t_start_runBlock
   console.log("Call to runBlock took " + runBlock_time.toFixed(2) + " milliseconds.")
-  //console.log('runBlock results:', results)
+  console.log('runBlock results:', results)
   const gasUsed = results.results[0].gasUsed.toNumber()
   console.log("runBlock gas used:", gasUsed)
   const mGasPerSecond = (gasUsed / 1000000) / (runBlock_time / 1000)
